@@ -1,6 +1,6 @@
 /* ==========================================================================
    MDC — Links
-   Vanilla JS: wind particles, avatar wave visualizer, music + beat map,
+   Vanilla JS: wind particles, circular avatar visualizer, music + beat map,
    typewriter, reveal-on-scroll, link send animations, bfcache recovery.
    ========================================================================== */
 
@@ -26,8 +26,8 @@
   root.classList.add("tier-" + tier);
 
   var SETTINGS = {
-    high: { dpr: 2, wind: 42, vizFps: 60, nameSpeed: 150, bioSpeed: 20, beatMap: true, glow: true },
-    mid: { dpr: 1.5, wind: 20, vizFps: 60, nameSpeed: 135, bioSpeed: 18, beatMap: true, glow: true },
+    high: { dpr: 2, wind: 56, vizFps: 60, nameSpeed: 150, bioSpeed: 20, beatMap: true, glow: true },
+    mid: { dpr: 1.5, wind: 30, vizFps: 60, nameSpeed: 135, bioSpeed: 18, beatMap: true, glow: true },
     low: { dpr: 1.2, wind: 0, vizFps: 30, nameSpeed: 0, bioSpeed: 0, beatMap: false, glow: false }
   }[tier];
 
@@ -233,32 +233,119 @@
   var windW = 0;
   var windH = 0;
   var windParticles = [];
+  var windDust = [];
+  var windStreakSprite = null;
+  var windDotSprite = null;
+
+  function buildWindSprites() {
+    if (windStreakSprite) return;
+
+    var streak = document.createElement("canvas");
+    streak.width = 256;
+    streak.height = 48;
+    var sg = streak.getContext("2d");
+
+    sg.save();
+    sg.shadowColor = "rgba(170, 240, 255, 0.85)";
+    sg.shadowBlur = 9;
+    sg.fillStyle = "rgba(235, 252, 255, 0.5)";
+    sg.beginPath();
+    sg.moveTo(4, 24);
+    sg.quadraticCurveTo(132, 18, 250, 22);
+    sg.lineTo(250, 26);
+    sg.quadraticCurveTo(132, 30, 4, 24);
+    sg.closePath();
+    sg.fill();
+    sg.restore();
+
+    var core = sg.createLinearGradient(0, 0, 256, 0);
+    core.addColorStop(0, "rgba(190, 245, 255, 0)");
+    core.addColorStop(0.45, "rgba(205, 246, 255, 0.18)");
+    core.addColorStop(0.8, "rgba(235, 252, 255, 0.72)");
+    core.addColorStop(1, "rgba(255, 255, 255, 0.95)");
+    sg.fillStyle = core;
+    sg.beginPath();
+    sg.moveTo(3, 24);
+    sg.quadraticCurveTo(134, 21.3, 250, 22.7);
+    sg.lineTo(250, 25.3);
+    sg.quadraticCurveTo(134, 26.7, 3, 24);
+    sg.closePath();
+    sg.fill();
+
+    var head = sg.createRadialGradient(248, 24, 0, 248, 24, 8);
+    head.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+    head.addColorStop(0.5, "rgba(225, 252, 255, 0.5)");
+    head.addColorStop(1, "rgba(190, 240, 255, 0)");
+    sg.fillStyle = head;
+    sg.fillRect(238, 14, 20, 20);
+
+    windStreakSprite = streak;
+
+    var dot = document.createElement("canvas");
+    dot.width = 32;
+    dot.height = 32;
+    var dg = dot.getContext("2d");
+    var halo = dg.createRadialGradient(16, 16, 0, 16, 16, 16);
+    halo.addColorStop(0, "rgba(255, 255, 255, 1)");
+    halo.addColorStop(0.22, "rgba(225, 252, 255, 0.7)");
+    halo.addColorStop(0.55, "rgba(170, 240, 255, 0.2)");
+    halo.addColorStop(1, "rgba(170, 240, 255, 0)");
+    dg.fillStyle = halo;
+    dg.beginPath();
+    dg.arc(16, 16, 16, 0, TAU);
+    dg.fill();
+    windDotSprite = dot;
+  }
 
   function makeWindParticle(anywhere) {
+    var depth = Math.random();
     return {
-      x: anywhere ? Math.random() * windW : -40 - Math.random() * 120,
+      x: anywhere ? Math.random() * (windW + 160) - 80 : -100 - Math.random() * 260,
       y: Math.random() * windH,
-      speed: 7 + Math.random() * 22,
-      length: 9 + Math.random() * 44,
-      alpha: 0.05 + Math.random() * 0.11,
-      width: 0.7 + Math.random() * 1,
+      depth: depth,
+      speed: 12 + depth * 46 + Math.random() * 24,
+      length: 22 + depth * 82 + Math.random() * 58,
+      width: 0.7 + depth * 2.3 + Math.random() * 0.9,
+      alpha: 0.1 + depth * 0.24 + Math.random() * 0.1,
       sway: Math.random() * TAU,
-      swaySpeed: 0.4 + Math.random() * 0.9
+      swaySpeed: 0.35 + Math.random() * 0.95,
+      swayAmp: 0.8 + depth * 4.2,
+      tilt: -0.03 + Math.random() * 0.06,
+      vy: -5 + Math.random() * 10
+    };
+  }
+
+  function makeDust(anywhere) {
+    return {
+      x: anywhere ? Math.random() * windW : -20 - Math.random() * 180,
+      y: Math.random() * windH,
+      size: 0.5 + Math.random() * 1.25,
+      alpha: 0.08 + Math.random() * 0.2,
+      speed: 3 + Math.random() * 15,
+      vy: -3 + Math.random() * 6
     };
   }
 
   function seedWind() {
     windParticles = [];
+    windDust = [];
     if (!windCtx || !SETTINGS.wind) return;
-    var scale = Math.min(1.15, Math.max(0.5, windW / 900));
+    buildWindSprites();
+    var scale = Math.min(1.15, Math.max(0.5, windW / 1000));
     var count = Math.round(SETTINGS.wind * scale);
+    var dustCount = Math.round((SETTINGS.wind >= 45 ? 18 : 9) * scale);
     for (var i = 0; i < count; i += 1) windParticles.push(makeWindParticle(true));
+    for (var j = 0; j < dustCount; j += 1) windDust.push(makeDust(true));
   }
 
   function resizeWind() {
     if (!windCanvas || !windCtx) return;
     if (!SETTINGS.wind) {
       windCanvas.hidden = true;
+      windW = 0;
+      windH = 0;
+      windParticles = [];
+      windDust = [];
       return;
     }
     windCanvas.hidden = false;
@@ -272,38 +359,72 @@
   }
 
   function drawWind(dt) {
-    if (!windCtx || !windW || !windParticles.length) return;
+    if (!windCtx || !windW || !windH || !SETTINGS.wind) return;
     windCtx.clearRect(0, 0, windW, windH);
+    if (!windParticles.length && !windDust.length) return;
+    if (!windStreakSprite) buildWindSprites();
+
+    var step = Math.min(dt, 48) / 1000;
+    var speedMul = 1 + intensity * 1.35;
+    var alphaMul = 0.85 + intensity * 1.15;
+    var lengthMul = 1 + intensity * 0.25;
+    var i;
+    windCtx.globalCompositeOperation = "lighter";
+
+    for (i = 0; i < windDust.length; i += 1) {
+      var d = windDust[i];
+      d.x += d.speed * speedMul * step;
+      d.y += d.vy * step;
+      if (d.x > windW + 30 || d.y < -30 || d.y > windH + 30) {
+        windDust[i] = makeDust(false);
+        continue;
+      }
+      var dotSize = d.size * 7;
+      windCtx.globalAlpha = Math.min(0.38, d.alpha * alphaMul);
+      windCtx.drawImage(windDotSprite, d.x - dotSize / 2, d.y - dotSize / 2, dotSize, dotSize);
+    }
+
     windCtx.lineCap = "round";
-    windCtx.strokeStyle = "#ffffff";
-
-    var speedMul = 1 + intensity * 1.2;
-    var alphaMul = 1 + intensity * 1.1;
-    var lengthMul = 1 + intensity * 0.5;
-
-    for (var i = 0; i < windParticles.length; i += 1) {
+    for (i = 0; i < windParticles.length; i += 1) {
       var p = windParticles[i];
-      p.x += p.speed * speedMul * (dt / 1000);
-      p.sway += p.swaySpeed * (dt / 1000);
+      p.x += p.speed * speedMul * step;
+      p.y += p.vy * step;
+      p.sway += p.swaySpeed * step;
 
-      if (p.x - p.length * 2 > windW) {
+      if (p.x - p.length * lengthMul > windW + 40) {
         windParticles[i] = makeWindParticle(false);
         continue;
       }
+      if (p.y < -40) p.y = windH + 40;
+      else if (p.y > windH + 40) p.y = -40;
 
-      var y = p.y + Math.sin(p.sway) * 2;
-      windCtx.globalAlpha = Math.min(0.42, p.alpha * alphaMul);
-      windCtx.lineWidth = p.width;
-      windCtx.beginPath();
-      windCtx.moveTo(p.x - p.length * lengthMul, y);
-      windCtx.lineTo(p.x, y);
-      windCtx.stroke();
+      var len = p.length * lengthMul;
+      var h = 4.5 + p.width * 3.4;
+      var y = p.y + Math.sin(p.sway) * p.swayAmp;
+      var tilt = p.tilt + Math.sin(p.sway * 0.7) * 0.012;
+
+      windCtx.save();
+      windCtx.translate(p.x, y);
+      windCtx.rotate(tilt);
+      windCtx.globalAlpha = Math.min(0.62, p.alpha * alphaMul);
+      windCtx.drawImage(windStreakSprite, -len, -h / 2, len, h);
+      windCtx.restore();
+
+      if (p.depth > 0.58) {
+        windCtx.globalAlpha = Math.min(0.85, 0.18 + p.alpha * alphaMul);
+        windCtx.fillStyle = "rgba(240, 253, 255, 1)";
+        windCtx.beginPath();
+        windCtx.ellipse(p.x, y, 0.8 + p.width * 0.42, 0.45 + p.width * 0.24, tilt, 0, TAU);
+        windCtx.fill();
+      }
     }
+
     windCtx.globalAlpha = 1;
+    windCtx.globalCompositeOperation = "source-over";
   }
 
   /* ------------------------------------------------------------------------
-     Avatar wave visualizer
+     Circular avatar visualizer
      ------------------------------------------------------------------------ */
 
   var vizCanvas = document.getElementById("viz");
@@ -313,15 +434,11 @@
   var vizSize = 0;
   var vizRadius = 80;
   var vizGradient = null;
-  var vizPhase = 0;
-  var VIZ_POINTS = 64;
-  var vizX = new Float32Array(VIZ_POINTS);
-  var vizY = new Float32Array(VIZ_POINTS);
 
   function resizeViz() {
     if (!vizCanvas || !vizCtx || !avatarRing) return;
     var ringSize = avatarRing.getBoundingClientRect().width || 160;
-    var size = Math.max(220, Math.round(ringSize * 1.9));
+    var size = Math.max(250, Math.round(ringSize * 2.2));
     var dpr = Math.min(window.devicePixelRatio || 1, SETTINGS.dpr);
 
     vizRadius = ringSize / 2;
@@ -333,74 +450,58 @@
     vizCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     vizGradient = vizCtx.createLinearGradient(0, 0, size, size);
-    vizGradient.addColorStop(0, "rgba(165, 243, 252, 0.95)");
-    vizGradient.addColorStop(0.45, "rgba(34, 211, 238, 0.95)");
-    vizGradient.addColorStop(1, "rgba(59, 130, 246, 0.95)");
+    vizGradient.addColorStop(0, "rgba(210, 250, 255, 0.92)");
+    vizGradient.addColorStop(0.35, "rgba(103, 232, 249, 1)");
+    vizGradient.addColorStop(0.72, "rgba(34, 211, 238, 0.95)");
+    vizGradient.addColorStop(1, "rgba(59, 130, 246, 0.92)");
   }
 
-  function drawViz(dt) {
+  function drawViz() {
     if (!vizCtx || !vizSize || !vizGradient || !vizVisible) return;
 
     var center = vizSize / 2;
-    var base = vizRadius + 10;
-    var amp = 2.2 + intensity * 6.4;
-    var push = intensity * 6;
-    var i;
-    var angle;
-
-    for (i = 0; i < VIZ_POINTS; i += 1) {
-      angle = (i / VIZ_POINTS) * TAU;
-      var wobble =
-        Math.sin(i * 0.55 + vizPhase) * amp +
-        Math.sin(i * 1.73 - vizPhase * 0.62) * (amp * 0.55);
-      var radius = base + wobble + push;
-      vizX[i] = center + Math.cos(angle) * radius;
-      vizY[i] = center + Math.sin(angle) * radius;
-    }
+    var base = vizRadius + 7;
+    var pulse = Math.sin(performance.now() * 0.00135) * 0.5 + 0.5;
+    var radius = base + intensity * 4.5 + pulse * 1.4;
 
     vizCtx.clearRect(0, 0, vizSize, vizSize);
-
-    function trace() {
-      vizCtx.beginPath();
-      var last = VIZ_POINTS - 1;
-      vizCtx.moveTo((vizX[last] + vizX[0]) / 2, (vizY[last] + vizY[0]) / 2);
-      for (var j = 0; j < VIZ_POINTS; j += 1) {
-        var next = (j + 1) % VIZ_POINTS;
-        vizCtx.quadraticCurveTo(
-          vizX[j],
-          vizY[j],
-          (vizX[j] + vizX[next]) / 2,
-          (vizY[j] + vizY[next]) / 2
-        );
-      }
-      vizCtx.closePath();
-    }
+    vizCtx.lineCap = "round";
 
     if (SETTINGS.glow) {
       vizCtx.save();
       vizCtx.globalCompositeOperation = "lighter";
-      vizCtx.strokeStyle = "rgba(34, 211, 238, 0.32)";
+
+      vizCtx.beginPath();
+      vizCtx.arc(center, center, radius + 12 + intensity * 12, 0, TAU);
+      vizCtx.strokeStyle = "rgba(34, 211, 238, " + (0.05 + intensity * 0.1) + ")";
+      vizCtx.lineWidth = 14 + intensity * 22;
+      vizCtx.shadowColor = "rgba(34, 211, 238, 0.55)";
+      vizCtx.shadowBlur = 18 + intensity * 26;
+      vizCtx.stroke();
+
+      vizCtx.beginPath();
+      vizCtx.arc(center, center, radius, 0, TAU);
+      vizCtx.strokeStyle = "rgba(103, 232, 249, " + (0.16 + intensity * 0.25) + ")";
       vizCtx.lineWidth = 5 + intensity * 9;
-      vizCtx.shadowColor = "rgba(34, 211, 238, 0.7)";
-      vizCtx.shadowBlur = 14 + intensity * 20;
-      trace();
+      vizCtx.shadowColor = "rgba(34, 211, 238, 0.9)";
+      vizCtx.shadowBlur = 12 + intensity * 22;
       vizCtx.stroke();
       vizCtx.restore();
     }
 
+    vizCtx.beginPath();
+    vizCtx.arc(center, center, radius, 0, TAU);
     vizCtx.strokeStyle = vizGradient;
-    vizCtx.lineWidth = 1.3 + intensity * 1.3;
-    vizCtx.lineJoin = "round";
-    trace();
+    vizCtx.lineWidth = 1.5 + intensity * 1.5;
+    vizCtx.globalAlpha = 0.75 + intensity * 0.25;
     vizCtx.stroke();
+    vizCtx.globalAlpha = 1;
 
     vizCtx.beginPath();
-    vizCtx.strokeStyle = "rgba(210, 245, 255, 0.12)";
+    vizCtx.arc(center, center, Math.max(1, base - 4), 0, TAU);
+    vizCtx.strokeStyle = "rgba(210, 245, 255, " + (0.1 + intensity * 0.14) + ")";
     vizCtx.lineWidth = 1;
-    vizCtx.arc(center, center, Math.max(1, base - 5), 0, TAU);
     vizCtx.stroke();
-
-    vizPhase += dt * (0.0009 + intensity * 0.0024);
   }
 
   var resizeCanvases = debounce(function () {
@@ -442,11 +543,11 @@
     drawWind(dt);
 
     if (SETTINGS.vizFps >= 60) {
-      drawViz(dt);
+      drawViz();
     } else {
       vizAccum += dt;
       if (vizAccum >= 33) {
-        drawViz(vizAccum);
+        drawViz();
         vizAccum = 0;
       }
     }

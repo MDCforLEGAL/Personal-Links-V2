@@ -1,6 +1,6 @@
 /* ==========================================================================
    MDC — Links
-   Mobile-first single page. Backgrounds, glass cards, wave visualizer.
+   Mobile-first single page. Backgrounds, glass cards, circular visualizer.
    ========================================================================== */
 
 :root {
@@ -108,12 +108,33 @@ h2 {
   position: fixed;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
   background-color: var(--bg);
   background-image: url("1000147320.png");
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center center;
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.22);
   transform: translateZ(0);
+}
+
+.bg::before {
+  content: "";
+  position: absolute;
+  inset: -14%;
+  background:
+    radial-gradient(36% 48% at 26% 26%, rgba(103, 232, 249, 0.14), transparent 70%),
+    radial-gradient(44% 56% at 78% 64%, rgba(59, 130, 246, 0.16), transparent 74%),
+    radial-gradient(30% 42% at 48% 96%, rgba(165, 243, 252, 0.08), transparent 72%);
+  filter: blur(26px);
+  opacity: 0.8;
+  pointer-events: none;
+  animation: bg-drift 28s ease-in-out infinite alternate;
+}
+
+@keyframes bg-drift {
+  0% { transform: translate3d(-1.5%, -1%, 0) scale(1.02); }
+  100% { transform: translate3d(1.5%, 1.5%, 0) scale(1.07); }
 }
 
 .bg::after {
@@ -137,7 +158,7 @@ h2 {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  opacity: 0.8;
+  opacity: 0.92;
 }
 
 .wind[hidden] {
@@ -518,11 +539,11 @@ h2 {
 .avatar-wrap::before {
   content: "";
   position: absolute;
-  inset: 6%;
+  inset: 4%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.18), transparent 68%);
-  filter: blur(18px);
-  transform: scale(1.35);
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.28), rgba(59, 130, 246, 0.08) 48%, transparent 70%);
+  filter: blur(22px);
+  transform: scale(1.5);
   pointer-events: none;
 }
 
@@ -542,8 +563,9 @@ h2 {
     rgba(34, 211, 238, 1)
   );
   box-shadow:
-    0 0 26px rgba(34, 211, 238, 0.22),
-    0 18px 55px rgba(0, 0, 0, 0.5);
+    0 0 18px rgba(34, 211, 238, 0.4),
+    0 0 48px rgba(59, 130, 246, 0.18),
+    0 20px 60px rgba(0, 0, 0, 0.55);
 }
 
 .avatar {
@@ -572,7 +594,8 @@ h2 {
   top: 50%;
   left: 50%;
   z-index: 1;
-  width: 190%;
+  width: 220%;
+  max-width: none;
   height: auto;
   aspect-ratio: 1;
   pointer-events: none;
@@ -1124,6 +1147,12 @@ h2 {
 .tier-low .avatar-wrap::before {
   filter: none;
   opacity: 0.5;
+}
+
+.tier-low .bg::before {
+  animation: none;
+  filter: none;
+  opacity: 0.45;
 }
 
 .tier-low .reveal {
