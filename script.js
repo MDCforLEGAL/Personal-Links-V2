@@ -45,6 +45,12 @@
   var musicStarted = false;
   var panelOpen = false;
   var audioCtx = null;
+  var analyser = null;
+  var freqData = null;
+  var volumeGain = null;
+  var analyserSetup = false;
+  var volumeLevel = 0.8;
+  var mutedState = false;
 
   /* ------------------------------------------------------------------------
      Tiny helpers
@@ -196,27 +202,43 @@
   var beatIndex = -1;
   var lastAudioTime = 0;
   var vizVisible = true;
+  var spectrumActive = false;
 
   function updateIntensity(dt) {
     var playing = isPlaying() && audio.readyState >= 2;
     var time = audio ? audio.currentTime : 0;
+    var breath = 0.5 + 0.5 * Math.sin(performance.now() * 0.0016);
+    var target = 0.18 + breath * 0.14;
+    var i;
+    spectrumActive = false;
 
-    if (time + 0.05 < lastAudioTime) beatIndex = -1;
-    lastAudioTime = time;
-
-    var beat = 0;
-    if (playing && beats.length) {
+    if (playing && analyser && freqData) {
+      analyser.getByteFrequencyData(freqData);
+      var bassEnd = Math.max(8, Math.round(freqData.length * 0.06));
+      var bass = 0;
+      var total = 0;
+      for (i = 0; i < freqData.length; i += 1) {
+        var value = freqData[i] / 255;
+        total += value;
+        if (i < bassEnd) bass += value;
+      }
+      bass /= bassEnd;
+      total /= freqData.length;
+      target = 0.18 + bass * 0.62 + total * 0.24;
+      spectrumActive = true;
+    } else if (playing && beats.length) {
+      if (time + 0.05 < lastAudioTime) beatIndex = -1;
+      lastAudioTime = time;
+      var beat = 0;
       while (beatIndex + 1 < beats.length && beats[beatIndex + 1].t <= time) beatIndex += 1;
       if (beatIndex >= 0) {
         var age = time - beats[beatIndex].t;
         if (age >= 0 && age < 0.6) beat = beats[beatIndex].e * Math.exp(-age * 6.5);
       }
+      target = 0.12 + breath * 0.06 + beat * 0.86;
+    } else {
+      lastAudioTime = time;
     }
-
-    var breath = 0.5 + 0.5 * Math.sin(performance.now() * 0.0016);
-    var target = playing
-      ? 0.12 + breath * 0.06 + beat * 0.86
-      : 0.18 + breath * 0.14;
 
     var smoothing = 1 - Math.exp(-Math.max(0.5, dt) / (target > intensity ? 60 : 180));
     intensity += (target - intensity) * smoothing;
@@ -434,6 +456,8 @@
   var vizSize = 0;
   var vizRadius = 80;
   var vizGradient = null;
+  var VIZ_BARS = 72;
+  var spectrumLevels = new Float32Array(VIZ_BARS);
 
   function resizeViz() {
     if (!vizCanvas || !vizCtx || !avatarRing) return;
@@ -456,7 +480,7 @@
     vizGradient.addColorStop(1, "rgba(59, 130, 246, 0.92)");
   }
 
-  function drawViz() {
+  function drawViz(dt) {
     if (!vizCtx || !vizSize || !vizGradient || !vizVisible) return;
 
     var center = vizSize / 2;
@@ -495,6 +519,71 @@
     vizCtx.lineWidth = 1.5 + intensity * 1.5;
     vizCtx.globalAlpha = 0.75 + intensity * 0.25;
     vizCtx.stroke();
+    vizCtx.globalAlpha = 1;
+
+    var frame = Math.max(8, Math.min(48, dt || 16.7));
+    var rise = 1 - Math.exp(-frame / 45);
+    var fall = 1 - Math.exp(-frame / 130);
+    var live = spectrumActive && analyser && freqData;
+    var nyquist = live ? analyser.context.sampleRate / 2 : 22050;
+    var minFreq = 40;
+    var maxFreq = 16000;
+    var range = maxFreq / minFreq;
+    var barBase = radius + 4;
+    var maxBar = Math.min(56, 32 + vizRadius * 0.25);
+    var i;
+    var j;
+
+    for (i = 0; i < VIZ_BARS; i += 1) {
+      var target = 0;
+      if (live) {
+        var t0 = i / VIZ_BARS;
+        var t1 = (i + 1) / VIZ_BARS;
+        var f0 = minFreq * Math.pow(range, t0);
+        var f1 = minFreq * Math.pow(range, t1);
+        var bin0 = Math.max(0, Math.min(freqData.length - 1, Math.floor(f0 / nyquist * freqData.length)));
+        var bin1 = Math.max(bin0 + 1, Math.min(freqData.length, Math.ceil(f1 / nyquist * freqData.length)));
+        var sum = 0;
+        var peak = 0;
+        for (j = bin0; j < bin1; j += 1) {
+          var value = freqData[j];
+          sum += value;
+          if (value > peak) peak = value;
+        }
+        target = ((sum / (bin1 - bin0)) / 255) * 0.55 + (peak / 255) * 0.45;
+        target *= 0.86 + t0 * 0.56;
+        if (target > 1) target = 1;
+      }
+      var current = spectrumLevels[i];
+      spectrumLevels[i] = current + (target - current) * (target > current ? rise : fall);
+    }
+
+    vizCtx.save();
+    vizCtx.globalCompositeOperation = "lighter";
+    var passes = SETTINGS.glow ? 2 : 1;
+    for (var pass = 0; pass < passes; pass += 1) {
+      var wide = pass === 0 && SETTINGS.glow;
+      vizCtx.lineWidth = wide ? 7 : 2.3;
+      var alphaBase = wide ? 0.16 : 0.78;
+      for (i = 0; i < VIZ_BARS; i += 1) {
+        var level = spectrumLevels[i];
+        if (level < 0.01) continue;
+        var angle = -Math.PI / 2 + (i / VIZ_BARS) * TAU;
+        var inner = barBase + 1;
+        var outer = barBase + 2 + level * maxBar;
+        var mix = i / VIZ_BARS;
+        var red = Math.round(103 + (147 - 103) * mix);
+        var green = Math.round(232 + (197 - 232) * mix);
+        var blue = Math.round(249 + (253 - 249) * mix);
+        vizCtx.strokeStyle = "rgb(" + red + "," + green + "," + blue + ")";
+        vizCtx.globalAlpha = alphaBase * (0.55 + level * 0.45);
+        vizCtx.beginPath();
+        vizCtx.moveTo(center + Math.cos(angle) * inner, center + Math.sin(angle) * inner);
+        vizCtx.lineTo(center + Math.cos(angle) * outer, center + Math.sin(angle) * outer);
+        vizCtx.stroke();
+      }
+    }
+    vizCtx.restore();
     vizCtx.globalAlpha = 1;
 
     vizCtx.beginPath();
@@ -543,11 +632,11 @@
     drawWind(dt);
 
     if (SETTINGS.vizFps >= 60) {
-      drawViz();
+      drawViz(dt);
     } else {
       vizAccum += dt;
       if (vizAccum >= 33) {
-        drawViz();
+        drawViz(vizAccum);
         vizAccum = 0;
       }
     }
@@ -570,6 +659,40 @@
      Audio context + beat map
      ------------------------------------------------------------------------ */
 
+  function setupAnalyser(ctx) {
+    if (!ctx || !audio || analyserSetup) return;
+    analyserSetup = true;
+    var source = null;
+    try {
+      var analysis = ctx.createAnalyser();
+      analysis.fftSize = 2048;
+      analysis.smoothingTimeConstant = 0.82;
+      analysis.minDecibels = -90;
+      analysis.maxDecibels = -12;
+
+      var gain = ctx.createGain();
+      gain.gain.value = mutedState ? 0 : volumeLevel;
+
+      source = ctx.createMediaElementSource(audio);
+      source.connect(analysis);
+      analysis.connect(gain);
+      gain.connect(ctx.destination);
+
+      analyser = analysis;
+      freqData = new Uint8Array(analysis.frequencyBinCount);
+      volumeGain = gain;
+      applyVolume();
+    } catch (err) {
+      if (source) {
+        try { source.connect(ctx.destination); } catch (ignored) {}
+      }
+      analyser = null;
+      freqData = null;
+      volumeGain = null;
+      applyVolume();
+    }
+  }
+
   function getAudioContext() {
     if (audioCtx) return audioCtx;
     var AC = window.AudioContext || window.webkitAudioContext;
@@ -579,6 +702,7 @@
     } catch (err) {
       audioCtx = null;
     }
+    if (audioCtx) setupAnalyser(audioCtx);
     return audioCtx;
   }
 
@@ -592,7 +716,7 @@
   var beatMapStarted = false;
 
   function scheduleBeatMap() {
-    if (!SETTINGS.beatMap || beatMapStarted || !audio) return;
+    if (!SETTINGS.beatMap || beatMapStarted || analyser || !audio) return;
     beatMapStarted = true;
     window.setTimeout(function () {
       if ("requestIdleCallback" in window) {
@@ -707,10 +831,22 @@
     if (volumeEl) volumeEl.style.setProperty("--fill", Math.round(value * 100) + "%");
   }
 
+  function applyVolume() {
+    if (!audio) return;
+    if (volumeGain) {
+      audio.volume = 1;
+      audio.muted = false;
+      volumeGain.gain.value = mutedState ? 0 : volumeLevel;
+    } else {
+      audio.volume = volumeLevel;
+      audio.muted = mutedState;
+    }
+  }
+
   function syncAudioUI() {
     var playing = isPlaying();
-    var muted = audio ? audio.muted : false;
-    var volume = audio ? audio.volume : 0.8;
+    var muted = mutedState;
+    var volume = volumeLevel;
 
     if (npBtn) {
       npBtn.classList.toggle("is-playing", playing);
@@ -775,9 +911,12 @@
     playBtn.addEventListener("click", function () {
       unlockAudioContext();
       musicStarted = true;
+      awaitingUnlock = false;
+      removeUnlockListeners();
       if (!audio) return;
+      if (autoPlayPending) return;
       if (audio.paused) {
-        safePlay();
+        safePlay().then(syncAudioUI);
       } else {
         audio.pause();
       }
@@ -787,23 +926,26 @@
   if (muteBtn) {
     muteBtn.addEventListener("click", function () {
       if (!audio) return;
-      audio.muted = !audio.muted;
-      if (!audio.muted && audio.volume === 0) {
-        audio.volume = 0.6;
+      mutedState = !mutedState;
+      if (!mutedState && volumeLevel === 0) {
+        volumeLevel = 0.6;
         if (volumeEl) volumeEl.value = "0.6";
       }
+      applyVolume();
       syncAudioUI();
     });
   }
 
   if (volumeEl) {
-    paintVolume(Number(volumeEl.value) || 0.8);
+    var initialVolume = Number(volumeEl.value);
+    if (isFinite(initialVolume)) volumeLevel = initialVolume;
+    paintVolume(mutedState ? 0 : volumeLevel);
     volumeEl.addEventListener("input", function () {
       if (!audio) return;
-      var next = Number(volumeEl.value);
-      audio.volume = next;
-      if (next > 0 && audio.muted) audio.muted = false;
-      paintVolume(next);
+      volumeLevel = Number(volumeEl.value);
+      if (volumeLevel > 0 && mutedState) mutedState = false;
+      applyVolume();
+      paintVolume(mutedState ? 0 : volumeLevel);
       syncAudioUI();
     });
   }
@@ -823,7 +965,7 @@
   });
 
   if (audio) {
-    audio.volume = 0.8;
+    applyVolume();
     var audioEvents = ["play", "playing", "pause", "ended", "waiting", "canplay", "volumechange", "error"];
     for (var ae = 0; ae < audioEvents.length; ae += 1) {
       audio.addEventListener(audioEvents[ae], syncAudioUI);
@@ -845,8 +987,10 @@
     }
   }
 
-  function onFirstInteraction() {
+  function onFirstInteraction(event) {
     if (!awaitingUnlock || autoPlayPending || !audio) return;
+    var target = event ? event.target : null;
+    if (target && target.closest && target.closest("#music-panel")) return;
 
     autoPlayPending = true;
     musicStarted = true;
