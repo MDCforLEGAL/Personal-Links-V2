@@ -321,7 +321,7 @@
   function resizeViz() {
     if (!vizCanvas || !vizCtx || !avatarRing) return;
     var ringSize = avatarRing.getBoundingClientRect().width || 160;
-    var size = Math.max(220, Math.round(ringSize * 1.75));
+    var size = Math.max(220, Math.round(ringSize * 1.9));
     var dpr = Math.min(window.devicePixelRatio || 1, SETTINGS.dpr);
 
     vizRadius = ringSize / 2;
@@ -342,7 +342,7 @@
     if (!vizCtx || !vizSize || !vizGradient || !vizVisible) return;
 
     var center = vizSize / 2;
-    var base = vizRadius + 7;
+    var base = vizRadius + 10;
     var amp = 2.2 + intensity * 6.4;
     var push = intensity * 6;
     var i;
@@ -727,26 +727,45 @@
     for (var ae = 0; ae < audioEvents.length; ae += 1) {
       audio.addEventListener(audioEvents[ae], syncAudioUI);
     }
+    audio.addEventListener("playing", scheduleBeatMap);
   }
 
   /* ------------------------------------------------------------------------
      First-interaction audio unlock
      ------------------------------------------------------------------------ */
 
-  var unlockEvents = ["pointerdown", "touchstart", "keydown", "scroll"];
+  var unlockEvents = ["pointerdown", "touchstart", "keydown", "click"];
   var awaitingUnlock = true;
+  var autoPlayPending = false;
 
-  function onFirstInteraction() {
-    if (!awaitingUnlock) return;
-    awaitingUnlock = false;
+  function removeUnlockListeners() {
     for (var i = 0; i < unlockEvents.length; i += 1) {
       window.removeEventListener(unlockEvents[i], onFirstInteraction, true);
     }
-    unlockAudioContext();
+  }
+
+  function onFirstInteraction() {
+    if (!awaitingUnlock || autoPlayPending || !audio) return;
+
+    autoPlayPending = true;
     musicStarted = true;
-    safePlay();
+    unlockAudioContext();
     syncAudioUI();
-    scheduleBeatMap();
+
+    safePlay().then(function () {
+      autoPlayPending = false;
+      if (!audio.paused && !audio.ended) {
+        awaitingUnlock = false;
+        removeUnlockListeners();
+        return;
+      }
+      /* The gesture was not accepted (or audio is still unavailable). Stay
+         armed so the next real tap/click attempts playback again. */
+      if (!audio.error) {
+        musicStarted = false;
+        syncAudioUI();
+      }
+    });
   }
 
   for (var ue = 0; ue < unlockEvents.length; ue += 1) {

@@ -6,14 +6,14 @@
 :root {
   --bg: #000000;
   --ink: #f4f8ff;
-  --navy: #16357d;
+  --navy: #4a70d8;
   --cyan: #22d3ee;
   --cyan-soft: #67e8f9;
   --blue: #3b82f6;
   --line: rgba(255, 255, 255, 0.11);
   --card: rgba(5, 9, 16, 0.52);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --avatar: clamp(148px, 38vw, 184px);
+  --avatar: clamp(132px, 34vw, 172px);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -567,24 +567,12 @@ h2 {
   display: none;
 }
 
-.avatar-fallback {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #c8f6ff;
-  text-shadow: 0 0 20px rgba(34, 211, 238, 0.7);
-}
-
 .viz {
   position: absolute;
   top: 50%;
   left: 50%;
   z-index: 1;
-  width: 175%;
+  width: 190%;
   height: auto;
   aspect-ratio: 1;
   pointer-events: none;
@@ -595,7 +583,7 @@ h2 {
   position: relative;
   z-index: 3;
   min-height: 1.1em;
-  margin-top: clamp(28px, 5vh, 40px);
+  margin-top: clamp(32px, 5vh, 44px);
   padding-left: 0.07em;
   font-size: clamp(2.7rem, 12vw, 4.4rem);
   font-weight: 800;
@@ -1154,11 +1142,11 @@ h2 {
 
 @media (min-width: 768px) {
   :root {
-    --avatar: 196px;
+    --avatar: 184px;
   }
 
   .hero-name {
-    margin-top: 38px;
+    margin-top: 40px;
   }
 
   .links {
@@ -1188,7 +1176,7 @@ h2 {
 
 @media (max-height: 620px) {
   :root {
-    --avatar: 124px;
+    --avatar: 118px;
   }
 
   .hero {
